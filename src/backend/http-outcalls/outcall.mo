@@ -1,6 +1,8 @@
 import Blob "mo:core/Blob";
 import Text "mo:core/Text";
 import Runtime "mo:core/Runtime";
+import Int "mo:core/Int";
+import Time "mo:core/Time";
 import Array "mo:core/Array";
 import IC "ic:aaaaa-aa";
 
@@ -23,7 +25,7 @@ module {
     value : Text;
   };
 
-  let httpRequestCycles = 400_000_000_000;
+  let httpRequestCycles = 231_000_000_000;
 
   public func httpGetRequest(url : Text, extraHeaders : [Header], transform : Transform) : async Text {
     let headers = extraHeaders.concat([{
@@ -32,7 +34,7 @@ module {
     }]);
     let http_request : IC.http_request_args = {
       url;
-      max_response_bytes = ?2048;
+      max_response_bytes = null;
       headers;
       body = null;
       method = #get;
@@ -50,15 +52,14 @@ module {
   };
 
   public func httpPostRequest(url : Text, extraHeaders : [Header], body : Text, transform : Transform) : async Text {
-    // Note: Idempotency-Key intentionally omitted — per-replica time values differ
-    // and can cause inconsistent requests across IC nodes.
     let headers = extraHeaders.concat([
       { name = "User-Agent"; value = "caffeine.ai" },
+      { name = "Idempotency-Key"; value = "Time-" # Time.now().toText() },
     ]);
     let requestBody = body.encodeUtf8();
     let httpRequest : IC.http_request_args = {
       url;
-      max_response_bytes = ?2048; // Sufficient for eth_getBalance JSON-RPC responses
+      max_response_bytes = null;
       headers;
       body = ?requestBody;
       method = #post;
