@@ -131,33 +131,43 @@ actor {
     ?result
   };
 
-  // Extract "result" value from JSON-RPC response
+  // Extract "result" value from JSON-RPC response.
+  // Handles both compact ("result":"0x...") and spaced ("result": "0x...") formats.
   func extractJsonResult(json : Text) : ?Text {
     let chars = json.chars().toArray();
     let dq : Char = '\u{22}';
-    let marker : [Char] = [dq, 'r', 'e', 's', 'u', 'l', 't', dq, ':', dq];
+    // Match "result" key followed by colon (skip whitespace between : and ")
+    let keyMarker : [Char] = [dq, 'r', 'e', 's', 'u', 'l', 't', dq, ':'];
     let n = chars.size();
-    let m = marker.size();
+    let m = keyMarker.size();
     var i = 0;
     label search while (i + m <= n) {
       var matched = true;
       var j = 0;
       label checkLoop while (j < m) {
-        if (chars[i + j] != marker[j]) {
+        if (chars[i + j] != keyMarker[j]) {
           matched := false;
           break checkLoop;
         };
         j += 1;
       };
       if (matched) {
-        var valueBuf : [Char] = [];
+        // Skip optional whitespace after ':'
         var k = i + m;
-        label collectLoop while (k < n) {
-          if (chars[k] == dq) {
-            return ?Text.fromIter(valueBuf.vals());
-          };
-          valueBuf := valueBuf.concat([chars[k]]);
+        while (k < n and (chars[k] == ' ' or chars[k] == '\t' or chars[k] == '\n')) {
           k += 1;
+        };
+        // Expect opening quote for string value
+        if (k < n and chars[k] == dq) {
+          k += 1;
+          var valueBuf : [Char] = [];
+          label collectLoop while (k < n) {
+            if (chars[k] == dq) {
+              return ?Text.fromIter(valueBuf.vals());
+            };
+            valueBuf := valueBuf.concat([chars[k]]);
+            k += 1;
+          };
         };
         break search;
       };
@@ -174,36 +184,45 @@ actor {
 
   // --- Balance Fetching ---
 
+  // Fetch balance for a single address, retrying up to 3 times on transient failures.
   public func fetchBalance(addressId : Nat) : async BalanceResult {
     let errResult = { addressId; balance = "Error"; hasError = true; isBelowThreshold = false };
-    switch (addresses.find(func(a : MonitoredAddress) : Bool { a.id == addressId })) {
-      case null { errResult };
-      case (?addr) {
-        switch (networks.find(func(n : Network) : Bool { n.id == addr.networkId })) {
-          case null { errResult };
-          case (?net) {
-            try {
-              let response = await HttpOutcalls.httpPostRequest(
-                net.rpcUrl,
-                [{ name = "Content-Type"; value = "application/json" }],
-                buildRpcBody(addr.address),
-                transform,
-              );
-              switch (extractJsonResult(response)) {
-                case null { errResult };
-                case (?hexBalance) {
-                  let isBelowThreshold = switch (hexToFloat(hexBalance)) {
-                    case null { false };
-                    case (?weiFloat) { (weiFloat / 1_000_000_000_000_000_000.0) < addr.minBalance };
-                  };
-                  { addressId; balance = hexBalance; hasError = false; isBelowThreshold };
-                };
-              };
-            } catch (_) { errResult };
+
+    // Resolve address record
+    let addr = switch (addresses.find(func(a : MonitoredAddress) : Bool { a.id == addressId })) {
+      case null { return errResult };
+      case (?a) { a };
+    };
+
+    // Resolve network record
+    let net = switch (networks.find(func(n : Network) : Bool { n.id == addr.networkId })) {
+      case null { return errResult };
+      case (?n) { n };
+    };
+
+    let body = buildRpcBody(addr.address);
+    let hdrs = [{ name = "Content-Type"; value = "application/json" }];
+
+    // Retry loop: up to 3 attempts for transient HTTP failures
+    var attempt = 0;
+    while (attempt < 3) {
+      attempt += 1;
+      try {
+        let response = await HttpOutcalls.httpPostRequest(net.rpcUrl, hdrs, body, transform);
+        switch (extractJsonResult(response)) {
+          case null { /* response malformed or RPC error — retry */ };
+          case (?hexBalance) {
+            let isBelowThreshold = switch (hexToFloat(hexBalance)) {
+              case null { false };
+              case (?weiFloat) { (weiFloat / 1_000_000_000_000_000_000.0) < addr.minBalance };
+            };
+            return { addressId; balance = hexBalance; hasError = false; isBelowThreshold };
           };
         };
-      };
+      } catch (_) { /* network error — retry */ };
     };
+
+    errResult
   };
 
   public func fetchAllBalances() : async [BalanceResult] {

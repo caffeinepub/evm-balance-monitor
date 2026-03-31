@@ -33,6 +33,7 @@ export default function App() {
     new Map(),
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [warningCount, setWarningCount] = useState(0);
@@ -62,6 +63,41 @@ export default function App() {
       setIsRefreshing(false);
     }
   }, [actor]);
+
+  // Retry a single address that previously failed
+  const handleRetrySingle = useCallback(
+    async (addressId: bigint) => {
+      if (!actor) return;
+      const key = addressId.toString();
+      setRetryingIds((prev) => new Set(prev).add(key));
+      try {
+        const result = await actor.fetchBalance(addressId);
+        setBalanceMap((prev) => {
+          const next = new Map(prev);
+          next.set(key, result);
+          return next;
+        });
+        // Recompute warning count
+        setBalanceMap((prev) => {
+          let warnings = 0;
+          for (const r of prev.values()) {
+            if (r.isBelowThreshold && !r.hasError) warnings++;
+          }
+          setWarningCount(warnings);
+          return prev;
+        });
+      } catch (err) {
+        console.error("Retry failed for address", key, err);
+      } finally {
+        setRetryingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [actor],
+  );
 
   // Initial fetch once actor is ready
   const prevActorRef = useRef<typeof actor>(null);
@@ -283,6 +319,8 @@ export default function App() {
                 <AddressesPanel
                   balanceMap={balanceMap}
                   lastRefreshed={lastRefreshed}
+                  retryingIds={retryingIds}
+                  onRetrySingle={handleRetrySingle}
                 />
               </motion.div>
             ) : (

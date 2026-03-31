@@ -43,6 +43,7 @@ import {
   Edit2,
   Loader2,
   Plus,
+  RefreshCw,
   Trash2,
   Wallet,
   WifiOff,
@@ -59,7 +60,7 @@ import {
   useUpdateAddress,
 } from "../hooks/useQueries";
 
-// ── Utility ──────────────────────────────────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────────────────────────
 
 export function hexWeiToEth(hex: string): string {
   if (!hex || hex === "Error" || !hex.startsWith("0x")) return "Error";
@@ -77,7 +78,7 @@ function isValidEvmAddress(addr: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(addr);
 }
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface AddrForm {
   addrLabel: string;
@@ -108,18 +109,22 @@ function validateForm(form: AddrForm, hasNetworks: boolean): AddrFormErrors {
   return err;
 }
 
-// ── Props ────────────────────────────────────────────────────────────────────
+// ── Props ───────────────────────────────────────────────────────────────────
 
 interface AddressesPanelProps {
   balanceMap: Map<string, BalanceResult>;
   lastRefreshed: Date | null;
+  retryingIds: Set<string>;
+  onRetrySingle: (id: bigint) => void;
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ───────────────────────────────────────────────────────────────────
 
 export default function AddressesPanel({
   balanceMap,
   lastRefreshed,
+  retryingIds,
+  onRetrySingle,
 }: AddressesPanelProps) {
   const { data: addresses = [], isLoading: loadingAddresses } = useAddresses();
   const { data: networks = [], isLoading: loadingNetworks } = useNetworks();
@@ -470,20 +475,22 @@ export default function AddressesPanel({
                       <TableHead className="text-xs font-medium text-muted-foreground text-center w-16">
                         Status
                       </TableHead>
-                      <TableHead className="text-xs font-medium text-muted-foreground text-right w-20">
+                      <TableHead className="text-xs font-medium text-muted-foreground text-right w-24">
                         Actions
                       </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {addresses.map((addr, idx) => {
-                      const result = balanceMap.get(addr.id.toString());
+                      const key = addr.id.toString();
+                      const result = balanceMap.get(key);
                       const isEditing = editingId === addr.id;
+                      const isRetrying = retryingIds.has(key);
 
                       if (isEditing) {
                         return (
                           <TableRow
-                            key={addr.id.toString()}
+                            key={key}
                             className="bg-accent/30 hover:bg-accent/30"
                             data-ocid={`addresses.item.${idx + 1}`}
                           >
@@ -643,7 +650,7 @@ export default function AddressesPanel({
 
                       return (
                         <TableRow
-                          key={addr.id.toString()}
+                          key={key}
                           className="group"
                           data-ocid={`addresses.item.${idx + 1}`}
                         >
@@ -684,18 +691,39 @@ export default function AddressesPanel({
 
                           {/* Balance */}
                           <TableCell className="py-3 text-right">
-                            {result === undefined ? (
+                            {isRetrying ? (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              </span>
+                            ) : result === undefined ? (
                               <span className="text-xs text-muted-foreground/50">
                                 —
                               </span>
                             ) : result.hasError ? (
-                              <Badge
-                                variant="destructive"
-                                className="text-xs"
-                                data-ocid="addresses.error_state"
-                              >
-                                Error
-                              </Badge>
+                              <div className="inline-flex items-center gap-1.5 justify-end">
+                                <Badge
+                                  variant="destructive"
+                                  className="text-xs"
+                                  data-ocid="addresses.error_state"
+                                >
+                                  Error
+                                </Badge>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => onRetrySingle(addr.id)}
+                                      className="text-muted-foreground hover:text-foreground transition-colors"
+                                      aria-label="Retry fetch"
+                                    >
+                                      <RefreshCw className="w-3 h-3" />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">
+                                    Retry this address
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
                             ) : (
                               <span
                                 className={`font-mono text-sm font-medium ${
@@ -718,7 +746,9 @@ export default function AddressesPanel({
 
                           {/* Status */}
                           <TableCell className="py-3 text-center">
-                            {result === undefined || result.hasError ? (
+                            {isRetrying ? (
+                              <Loader2 className="w-4 h-4 text-muted-foreground/50 animate-spin mx-auto" />
+                            ) : result === undefined || result.hasError ? (
                               <span className="text-muted-foreground/30 text-xs">
                                 —
                               </span>
