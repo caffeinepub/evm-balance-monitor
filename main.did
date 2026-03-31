@@ -1,0 +1,58 @@
+type http_request_result = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type http_header = 
+ record {
+   name: text;
+   value: text;
+ };
+type TransformationOutput = 
+ record {
+   body: blob;
+   headers: vec http_header;
+   status: nat;
+ };
+type TransformationInput = 
+ record {
+   context: blob;
+   response: http_request_result;
+ };
+type Network = 
+ record {
+   id: nat;
+   name: text;
+   rpcUrl: text;
+ };
+type MonitoredAddress = 
+ record {
+   addrLabel: text;
+   address: text;
+   id: nat;
+   minBalance: float64;
+   networkId: nat;
+ };
+type BalanceResult = 
+ record {
+   addressId: nat;
+   balance: text;
+   hasError: bool;
+   isBelowThreshold: bool;
+ };
+service : {
+  addAddress: (addrLabel: text, address: text, networkId: nat, minBalance:
+   float64) -> (nat);
+  addNetwork: (name: text, rpcUrl: text) -> (nat);
+  fetchAllBalances: () -> (vec BalanceResult);
+  fetchBalance: (addressId: nat) -> (BalanceResult);
+  getAddresses: () -> (vec MonitoredAddress) query;
+  getNetworks: () -> (vec Network) query;
+  removeAddress: (id: nat) -> (bool);
+  removeNetwork: (id: nat) -> (bool);
+  transform: (input: TransformationInput) -> (TransformationOutput) query;
+  updateAddress: (id: nat, addrLabel: text, address: text, networkId: 
+   nat, minBalance: float64) -> (bool);
+  updateNetwork: (id: nat, name: text, rpcUrl: text) -> (bool);
+}
