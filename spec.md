@@ -1,30 +1,27 @@
 # EVM Balance Monitor
 
 ## Current State
-- Full-stack DApp with Motoko backend and React frontend
-- `InternetIdentityProvider` is already set up in `main.tsx`
-- `useInternetIdentity` hook exists but is not used to gate access
-- App is fully visible to any visitor without authentication
-- Backend has no caller-based access control; anyone can read/write data
+The app is at Version 9 (rollback to Version 5 with address copy feature). It includes:
+- Per-user data isolation via Internet Identity Principal (Version 5 feature)
+- Password gate ("dyfqpl") before Internet Identity login (Version 5 feature)
+- Retry logic and per-address retry buttons (Version 4 feature)
+- Address copy feature
+- Dark-themed professional UI
 
 ## Requested Changes (Diff)
 
 ### Add
-- Login gate screen: when `identity` is null/anonymous, show a centered login page with app logo, title, description, and "Login with Internet Identity" button
-- Logout button in the header (top-right area, next to Refresh button)
-- Loading state while Internet Identity initializes (`isInitializing === true`)
+- Nothing new
 
 ### Modify
-- `App.tsx`: wrap the dashboard with an auth check using `useInternetIdentity`; render login screen if not authenticated, dashboard if authenticated
-- `useActor.ts`: keep as-is (already reads `identity`)
+- **LoginScreen.tsx**: Remove the password gate entirely. The login page should directly show the Internet Identity login button without any password input step.
+- **Backend (main.mo)**: Confirm it has NO per-Principal data isolation (all users share the same data store) - matches Version 4 behavior. Current code appears correct.
 
 ### Remove
-- Nothing removed
+- Password gate from LoginScreen (the two-step verify-then-login flow)
+- Per-user data isolation from backend (already removed in current version)
 
 ## Implementation Plan
-1. In `App.tsx`, import `useInternetIdentity`
-2. If `isInitializing`, render a full-screen spinner
-3. If `identity` is falsy or principal is anonymous, render a `LoginScreen` component
-4. If authenticated, render the existing dashboard + add logout button in header
-5. Create `LoginScreen` as an inline or separate component: dark-themed, centered card with app icon, title, tagline, and a primary "Login with Internet Identity" button
-6. Add logout button in header that calls `clear()` from `useInternetIdentity`
+1. Rewrite LoginScreen.tsx to show a simple login card with just the Internet Identity login button, no password input
+2. Backend main.mo already matches Version 4 (no per-Principal isolation) - no changes needed
+3. Validate and deploy
